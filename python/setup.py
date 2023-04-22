@@ -33,7 +33,7 @@ def _kwargs():
     license       = '$License$'
     platforms     = 'any'
     py_modules    = ['tenjin']
-    package_dir   = {'': python2 and 'lib2' or 'lib3'}
+    package_dir   = {'': python2 and 'lib2' or 'lib3' or 'lib'}
     scripts       = ['bin/pytenjin']
     #packages     = ['tenjin']
     #zip_safe     = False
