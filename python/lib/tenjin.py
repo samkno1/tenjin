@@ -1,6 +1,6 @@
 ##
-## $Release: $
-## $Copyright: copyright(c) 2007-2011 kuwata-lab.com all rights reserved. $
+## $Release: 1.1.1 $
+## $Copyright: copyright(c) 2007-2012 kuwata-lab.com all rights reserved. $
 ## $License: MIT License $
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining
@@ -29,7 +29,7 @@
    http://www.kuwata-lab.com/tenjin/pytenjin-examples.html
 """
 
-__version__  = "$Release: 0.0.0 $"[10:-2]
+__version__  = "$Release: 1.1.1 $"[10:-2]
 __license__  = "$License: MIT License $"[10:-2]
 __all__      = ('Template', 'Engine', )
 
@@ -72,47 +72,25 @@ def _read_binary_file(filename):
     finally:
         f.close()
 
-if python2:
-    codecs = None    # lazy import
+def _read_text_file(filename, encoding=None):
+    f = open(filename, encoding=(encoding or 'utf-8'))
+    try:
+        return f.read()
+    finally:
+        f.close()
 
-    def _read_text_file(filename, encoding=None):
-        global codecs
-        if not codecs: import codecs
-        f = codecs.open(filename, encoding=(encoding or 'utf-8'))
-        try:
-            return f.read()
-        finally:
-            f.close()
+def _read_template_file(filename, encoding=None):
+    s = _read_binary_file(filename)          ## binary
+    return s.decode(encoding or 'utf-8')     ## binary to unicode(=str)
 
-    def _read_template_file(filename, encoding=None):
-        s = _read_binary_file(filename)          ## binary(=str)
-        if encoding: s = s.decode(encoding)      ## binary(=str) to unicode
-        return s
-
-    _basestring = basestring
-    _unicode    = unicode
-    _bytes      = str
-elif python3:
-    def _read_text_file(filename, encoding=None):
-        f = open(filename, encoding=(encoding or 'utf-8'))
-        try:
-            return f.read()
-        finally:
-            f.close()
-
-    def _read_template_file(filename, encoding=None):
-        s = _read_binary_file(filename)          ## binary
-        return s.decode(encoding or 'utf-8')     ## binary to unicode(=str)
-
-    _basestring = (str, bytes)
-    _unicode    = str
-    _bytes      = bytes
-#end
+_basestring = (str, bytes)
+_unicode    = str
+_bytes      = bytes
 
 def _ignore_not_found_error(f, default=None):
     try:
         return f()
-    except OSError, ex:
+    except OSError as ex:
         if ex.errno == 2:   # error: No such file or directory
             return default
         raise
@@ -130,11 +108,7 @@ def create_module(module_name, dummy_func=None, **kwargs):
     mod.__dict__.update(kwargs)
     sys.modules[module_name] = mod
     if dummy_func:
-        if python2:
-            exec(dummy_func.func_code, mod.__dict__)
-        elif python3:
-            exec(dummy_func.__code__, mod.__dict__)
-        #end
+        exec(dummy_func.__code__, mod.__dict__)
     return mod
 
 def _raise(exception_class, *args):
@@ -152,87 +126,43 @@ def _dummy():
     global start_capture, stop_capture, capture_as, captured_as, CaptureContext
     global _p, _P, _decode_params
 
-    if python2:
-        def generate_tostrfunc(encode=None, decode=None):
-            """Generate 'to_str' function with encode or decode encoding.
-               ex. generate to_str() function which encodes unicode into binary(=str).
-                  to_str = tenjin.generate_tostrfunc(encode='utf-8')
-                  repr(to_str(u'hoge'))  #=> 'hoge' (str)
-               ex. generate to_str() function which decodes binary(=str) into unicode.
-                  to_str = tenjin.generate_tostrfunc(decode='utf-8')
-                  repr(to_str('hoge'))   #=> u'hoge' (unicode)
-            """
-            if encode:
-                if decode:
-                    raise ValueError("can't specify both encode and decode encoding.")
-                else:
-                    def to_str(val,   _str=str, _unicode=unicode, _isa=isinstance, _encode=encode):
-                        """Convert val into string or return '' if None. Unicode will be encoded into binary(=str)."""
-                        if _isa(val, _str):     return val
-                        if val is None:         return ''
-                        #if _isa(val, _unicode): return val.encode(_encode)  # unicode to binary(=str)
-                        if _isa(val, _unicode):
-                            return val.encode(_encode)  # unicode to binary(=str)
-                        return _str(val)
+    def generate_tostrfunc(decode=None, encode=None):
+        """Generate 'to_str' function with encode or decode encoding.
+           ex. generate to_str() function which encodes unicode(=str) into bytes
+              to_str = tenjin.generate_tostrfunc(encode='utf-8')
+              repr(to_str('hoge'))  #=> b'hoge' (bytes)
+           ex. generate to_str() function which decodes bytes into unicode(=str).
+              to_str = tenjin.generate_tostrfunc(decode='utf-8')
+              repr(to_str(b'hoge'))   #=> 'hoge' (str)
+        """
+        if encode:
+            if decode:
+                raise ValueError("can't specify both encode and decode encoding.")
             else:
-                if decode:
-                    def to_str(val,   _str=str, _unicode=unicode, _isa=isinstance, _decode=decode):
-                        """Convert val into string or return '' if None. Binary(=str) will be decoded into unicode."""
-                        #if _isa(val, _str):     return val.decode(_decode)  # binary(=str) to unicode
-                        if _isa(val, _str):
-                            return val.decode(_decode)
-                        if val is None:         return ''
-                        if _isa(val, _unicode): return val
-                        return _unicode(val)
-                else:
-                    def to_str(val,   _str=str, _unicode=unicode, _isa=isinstance):
-                        """Convert val into string or return '' if None. Both binary(=str) and unicode will be retruned as-is."""
-                        if _isa(val, _str):     return val
-                        if val is None:         return ''
-                        if _isa(val, _unicode): return val
-                        return _str(val)
-            return to_str
-
-        to_str = generate_tostrfunc(encode='utf-8')  # or encode=None?
-    elif python3:
-        def generate_tostrfunc(decode=None, encode=None):
-            """Generate 'to_str' function with encode or decode encoding.
-               ex. generate to_str() function which encodes unicode(=str) into bytes
-                  to_str = tenjin.generate_tostrfunc(encode='utf-8')
-                  repr(to_str('hoge'))  #=> b'hoge' (bytes)
-               ex. generate to_str() function which decodes bytes into unicode(=str).
-                  to_str = tenjin.generate_tostrfunc(decode='utf-8')
-                  repr(to_str(b'hoge'))   #=> 'hoge' (str)
-            """
-            if encode:
-                if decode:
-                    raise ValueError("can't specify both encode and decode encoding.")
-                else:
-                    def to_str(val,   _str=str, _bytes=bytes, _isa=isinstance, _encode=encode):
-                        """Convert val into string or return '' if None. Unicode(=str) will be encoded into bytes."""
-                        if _isa(val, _str):   return val.encode(_encode)  # unicode(=str) to binary
-                        if val is None:       return ''
-                        if _isa(val, _bytes): return val
-                        return _str(val).encode(_encode)
+                def to_str(val,   _str=str, _bytes=bytes, _isa=isinstance, _encode=encode):
+                    """Convert val into string or return '' if None. Unicode(=str) will be encoded into bytes."""
+                    if _isa(val, _str):   return val.encode(_encode)  # unicode(=str) to binary
+                    if val is None:       return ''
+                    if _isa(val, _bytes): return val
+                    return _str(val).encode(_encode)
+        else:
+            if decode:
+                def to_str(val,   _str=str, _bytes=bytes, _isa=isinstance, _decode=decode):
+                    """Convert val into string or return '' if None. Bytes will be decoded into unicode(=str)."""
+                    if _isa(val, _str):    return val
+                    if val is None:        return ''
+                    if _isa(val, _bytes):  return val.decode(_decode)  # binary to unicode(=str)
+                    return _str(val)
             else:
-                if decode:
-                    def to_str(val,   _str=str, _bytes=bytes, _isa=isinstance, _decode=decode):
-                        """Convert val into string or return '' if None. Bytes will be decoded into unicode(=str)."""
-                        if _isa(val, _str):    return val
-                        if val is None:        return ''
-                        if _isa(val, _bytes):  return val.decode(_decode)  # binary to unicode(=str)
-                        return _str(val)
-                else:
-                    def to_str(val,   _str=str, _bytes=bytes, _isa=isinstance):
-                        """Convert val into string or return '' if None. Both bytes and unicode(=str) will be retruned as-is."""
-                        if _isa(val, _str):    return val
-                        if val is None:        return ''
-                        if _isa(val, _bytes):  return val
-                        return _str(val)
-            return to_str
+                def to_str(val,   _str=str, _bytes=bytes, _isa=isinstance):
+                    """Convert val into string or return '' if None. Both bytes and unicode(=str) will be retruned as-is."""
+                    if _isa(val, _str):    return val
+                    if val is None:        return ''
+                    if _isa(val, _bytes):  return val
+                    return _str(val)
+        return to_str
 
-        to_str = generate_tostrfunc(decode='utf-8')
-    #end
+    to_str = generate_tostrfunc(decode='utf-8')
 
     def echo(string):
         """add string value into _buf. this is equivarent to '#{string}'."""
@@ -253,11 +183,7 @@ def _dummy():
             while True:
                 yield values[i]
                 i = (i + 1) % n
-        if python2:
-            return gen(values).next
-        elif python3:
-            return gen(values).__next__
-        #end
+        return gen(values).__next__
 
     class CaptureContext(object):
 
@@ -334,11 +260,7 @@ def _dummy():
         """decode <`#...#`> and <`$...$`> into #{...} and ${...}"""
         global unquote
         if unquote is None:
-            if python2:
-                from urllib import unquote
-            elif python3:
-                from urllib.parse import unquote
-            #end
+            from urllib.parse import unquote
         dct = { 'lt':'<', 'gt':'>', 'amp':'&', 'quot':'"', '#039':"'", }
         def unescape(s):
             #return s.replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"').replace('&#039;', "'").replace('&amp;',  '&')
@@ -366,11 +288,7 @@ generate_tostrfunc = helpers.generate_tostrfunc
 ##
 def _dummy():
     global is_escaped, as_escaped, to_escaped
-    if python2:
-        global Escaped, EscapedStr, EscapedUnicode
-    elif python3:
-        global Escaped, EscapedStr, EscapedBytes
-    #end
+    global Escaped, EscapedStr, EscapedBytes
     global __all__
     __all__ = ('is_escaped', 'as_escaped', 'to_escaped', ) #'Escaped', 'EscapedStr',
 
@@ -386,27 +304,15 @@ def _dummy():
         """string class which is marked as escaped."""
         pass
 
-    if python2:
-        class EscapedUnicode(unicode, Escaped):
-            """unicode class which is marked as escaped."""
-            pass
+    class EscapedBytes(bytes, Escaped):
+        """bytes class which is marked as escaped."""
+        pass
 
-        def as_escaped(s):
-            """mark string as escaped, without escaping."""
-            if isinstance(s, str):     return EscapedStr(s)
-            if isinstance(s, unicode): return EscapedUnicode(s)
-            raise TypeError("as_escaped(%r): expected str or unicode." % (s, ))
-    elif python3:
-        class EscapedBytes(bytes, Escaped):
-            """bytes class which is marked as escaped."""
-            pass
-
-        def as_escaped(s):
-            """mark string as escaped, without escaping. accepts only string."""
-            if isinstance(s, str):   return EscapedStr(s)
-            if isinstance(s, bytes): return EscapedBytes(s)
-            raise TypeError("as_escaped(%r): expected str or bytes." % (s, ))
-    #end
+    def as_escaped(s):
+        """mark string as escaped, without escaping. accepts only string."""
+        if isinstance(s, str):   return EscapedStr(s)
+        if isinstance(s, bytes): return EscapedBytes(s)
+        raise TypeError("as_escaped(%r): expected str or bytes." % (s, ))
 
     def to_escaped(value):
         """convert any value into string and escape it.
@@ -484,7 +390,7 @@ def _dummy():
         """
         kwargs = _normalize_attrs(kwargs)
         esc = _escaped.to_escaped
-        s = ''.join([ ' %s="%s"' % (k, esc(v)) for k, v in kwargs.iteritems() if v or v == 0 ])
+        s = ''.join([ ' %s="%s"' % (k, esc(v)) for k, v in kwargs.items() if v or v == 0 ])
         return _escaped.as_escaped(s)
 
     def _normalize_attrs(kwargs):
@@ -713,12 +619,7 @@ class Template(object):
            filename:str (=None)
              Filename of input. this is optional but recommended to report errors.
         """
-        if python2:
-            if self.encoding and isinstance(input, str):
-                input = input.decode(self.encoding)
-        elif python3:
-            pass
-        #end
+        pass
         self._reset(input, filename)
         buf = []
         self.before_convert(buf)
@@ -887,7 +788,7 @@ class Template(object):
     def add_text(self, buf, text, encode_newline=False):
         if not text: return
         use_unicode = self.encoding and python2
-        buf.append(use_unicode and "u'''" or "'''")
+        buf.append(use_unicode and "'''" or "'''")
         text = self._quote_text(text)
         if   not encode_newline:    buf.extend((text,       "''', "))
         elif text.endswith("\r\n"): buf.extend((text[0:-2], "\\r\\n''', "))
@@ -982,11 +883,7 @@ class Template(object):
         _END_WORDS   = self._END_WORDS
         _CONT_WORDS  = self._CONT_WORDS
         _WORD_REXP   = self._WORD_REXP
-        if python2:
-            get_line = lines_iter.next
-        elif python3:
-            get_line = lines_iter.__next__
-        #end
+        get_line = lines_iter.__next__
         while True:
             line = get_line()
             linenum += line.count("\n")
@@ -1089,7 +986,7 @@ class Template(object):
         else:
             try:
                 return ''.join(_buf)
-            except UnicodeDecodeError, ex:
+            except UnicodeDecodeError as ex:
                 logger.error("[tenjin.Template] " + str(ex))
                 logger.error("[tenjin.Template] (_buf=%r)" % (_buf, ))
                 raise
@@ -1385,7 +1282,7 @@ class CacheStorage(object):
     def clear(self):
         """remove all template objects and attributes from dict and cache file."""
         d, self.items = self.items, {}
-        for k in d.iterkeys():
+        for k in d.keys():
             self._delete(k)
         d.clear()
 
@@ -1451,11 +1348,7 @@ class PickleCacheStorage(FileCacheStorage):
     def __init__(self, *args, **kwargs):
         global pickle
         if pickle is None:
-            if python2:
-                import cPickle as pickle
-            elif python3:
-                import pickle
-            #end
+            import pickle
         FileCacheStorage.__init__(self, *args, **kwargs)
 
     def _restore(self, data):
@@ -1469,34 +1362,20 @@ class PickleCacheStorage(FileCacheStorage):
 class TextCacheStorage(FileCacheStorage):
 
     def _restore(self, data):
-        if python2:
-            header, script = data.split("\n\n", 1)
-        elif python3:
-            header, script = data.split("\n\n".encode('ascii'), 1)
-            header = header.decode('ascii')
-        #end
+        header, script = data.split("\n\n".encode('ascii'), 1)
+        header = header.decode('ascii')
         timestamp = encoding = args = None
         for line in header.split("\n"):
             key, val = line.split(": ", 1)
             if   key == 'timestamp':  timestamp = float(val)
             elif key == 'encoding':   encoding  = val
             elif key == 'args':       args      = val.split(', ')
-        if python2:
-            if encoding: script = script.decode(encoding)   ## binary(=str) to unicode
-        elif python3:
-            script = script.decode(encoding or 'utf-8')     ## binary to unicode(=str)
-        #end
+        script = script.decode(encoding or 'utf-8')     ## binary to unicode(=str)
         return {'args': args, 'script': script, 'timestamp': timestamp}
 
     def _dump(self, dct):
         s = dct['script']
-        if python2:
-            if dct.get('encoding') and isinstance(s, unicode):
-                s = s.encode(dct['encoding'])           ## unicode to binary(=str)
-            sb = []
-        elif python3:
-            sb = []
-        #end
+        sb = []
         sb.append("timestamp: %s\n" % dct['timestamp'])
         if dct.get('encoding'):
             sb.append("encoding: %s\n" % dct['encoding'])
